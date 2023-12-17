@@ -1,19 +1,23 @@
-import os
 import pandas as pd
 import albumentations as A
-import torch
 import argparse
 from sklearn.model_selection import train_test_split
 from albumentations.pytorch import ToTensorV2
 from model import faster_rcnn
 from dataset import DetectDataset
-
-
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-IMAGE_SIZE = (676, 380) # (w, h)
+from config import *
+sys.path.append('src')
 
 
 def train_loop(model, optimizer, train_loader):
+    """
+        Training loop for the Faster R-CNN model.
+
+        Args:
+            model (torch.nn.Module): The Faster R-CNN model.
+            optimizer (torch.optim.Optimizer): The optimizer for model training.
+            train_loader (torch.utils.data.DataLoader): DataLoader for training data.
+        """
     model.train()
     for i, (X, y) in enumerate(train_loader):
         X = [x.to(DEVICE) for x in X]
@@ -29,6 +33,13 @@ def train_loop(model, optimizer, train_loader):
 
 
 def val_loop(model, val_loader):
+    """
+        Validation loop for the Faster R-CNN model.
+
+        Args:
+            model (torch.nn.Module): The Faster R-CNN model.
+            val_loader (torch.utils.data.DataLoader): DataLoader for validation data.
+        """
     model.train()
     with torch.no_grad():
         for i, (X, y) in enumerate(val_loader):
@@ -42,6 +53,13 @@ def val_loop(model, val_loader):
 
 
 def test_loop(model, test_loader):
+    """
+        Testing loop for the Faster R-CNN model.
+
+        Args:
+            model (torch.nn.Module): The Faster R-CNN model.
+            test_loader (torch.utils.data.DataLoader): DataLoader for test data.
+        """
     model.train()
     with torch.no_grad():
         for i, (X, y) in enumerate(test_loader):
@@ -55,31 +73,40 @@ def test_loop(model, test_loader):
 
 
 def collate_fn(batch):
+    """
+        Custom collate function for the DataLoader.
+
+        Args:
+            batch (list): List of samples.
+
+        Returns:
+            tuple: Tuple containing images and targets.
+        """
     images = [item[0] for item in batch]
     targets = [item[1] for item in batch]
     return images, targets
 
 
 def main(args):
-    global IMAGE_SIZE
-    dataset_path = args["dataset_path"] if args["dataset_path"] else r'..\Detection\data'
-    label_csv_path = args["label_csv_path"] if args["label_csv_path"] else r'..\Detection\data\label.csv'
-    save_model_path = args["save_model_path"] if args["save_model_path"] else f'../Detection/models'
+    """
+        Main function for model training.
+
+        Args:
+            args (dict): Command-line arguments.
+        """
+    dataset_path = args["dataset_path"] if args["dataset_path"] else DATA_PATH
+    save_model_path = args["save_model_path"] if args["save_model_path"] else SAVED_MODEL_FOLDER
 
     image_height = args["image_height"] if args["image_height"] else IMAGE_SIZE[0]
     image_width = args["image_width"] if args["image_width"] else IMAGE_SIZE[1]
 
-    IMAGE_SIZE = (image_width, image_height)
-
-    if not os.path.exists(save_model_path):
-        os.makedirs(save_model_path)
 
     transform = A.Compose([
-        A.Resize(width=IMAGE_SIZE[0], height=IMAGE_SIZE[1]),
+        A.Resize(width=image_height, height=image_width),
         A.Normalize(mean=[0.485, 0.456, 0.406],
                     std=[0.229, 0.224, 0.225]), ToTensorV2()],
                     bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']))
-    label_data = pd.read_csv(label_csv_path)
+    label_data = pd.read_csv(f"{dataset_path}/label.csv")
 
     _, val_data = train_test_split(label_data, test_size=0.2, random_state=42)
     train_data, test_data = train_test_split(_, test_size=0.2, random_state=42)
@@ -88,9 +115,9 @@ def main(args):
     val_dataset = DetectDataset(dataset_path, val_data.reset_index(), transform=transform)
     test_dataset = DetectDataset(dataset_path, test_data.reset_index(), transform=transform)
 
-    epoch = args['epoch'] if args['epoch'] else 2
-    lr = args['lr'] if args['lr'] else 0.005
-    batch_size = args['batch_size'] if args['batch_size'] else 2
+    epochs = args['epoch'] if args['epoch'] else EPOCHS
+    lr = args['lr'] if args['lr'] else LR
+    batch_size = args['batch_size'] if args['batch_size'] else BATCH_SIZE
     num_classes = 2
 
     model = faster_rcnn(num_classes=num_classes).to(DEVICE)
@@ -99,7 +126,7 @@ def main(args):
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005)
 
-    for i in range(epoch):
+    for i in range(epochs):
         train_loop(model, optimizer, train_loader)
         val_loop(model, val_loader)
         test_loop(model, test_loader)
@@ -114,8 +141,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str,
                         help='Specify path to your dataset')
-    parser.add_argument("--label_csv_path", type=str,
-                        help='Specify path to your labels')
     parser.add_argument("--save_model_path", type=str,
                         help='Specify path for save models, where models folder will be created')
     parser.add_argument("--epoch", type=int,

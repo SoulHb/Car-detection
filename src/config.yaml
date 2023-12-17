@@ -1,0 +1,10 @@
+saved_model_folder: './saved_models'
+data_path: './data'
+model_file: 'model.pth'
+model_url: 'https://drive.google.com/uc?export=download&id=1G-3r-LxGNtx_auJw2X_2gYNxGuA-m7XF'
+lr: 0.001
+batch_size: 8
+number_of_epochs: 10
+image_height: 676
+image_width: 380
+confidence_threshold: 0.5

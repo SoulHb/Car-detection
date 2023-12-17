@@ -1,25 +1,40 @@
 import numpy as np
-import torch
 import io
 import cv2
 import argparse
-from train import IMAGE_SIZE, DEVICE
 from PIL import Image
 from model import faster_rcnn
 from torchvision import transforms as T
 from flask import Flask, request, jsonify
-
+from config import *
 app = Flask(__name__)
 
 
 def load_model():
-    global model, device
+    """
+        Load the Faster R-CNN model with a specified number of classes.
+
+        Returns:
+            torch.nn.Module: The loaded model.
+        """
     model = faster_rcnn(2)
-    model.load_state_dict(torch.load(model_path, map_location=device)['model_state_dict'])
+    model.load_state_dict(torch.load(f'{model_path}/{MODEL_FILE}', map_location=DEVICE)['model_state_dict'])
     model.eval()
+    return model
 
 
 def draw_boxes_on_image(image, boxes, labels):
+    """
+        Draw bounding boxes and labels on the input image.
+
+        Args:
+            image (PIL.Image.Image): Input image.
+            boxes (list): List of bounding boxes.
+            labels (list): List of corresponding labels.
+
+        Returns:
+            numpy.ndarray: Image with drawn bounding boxes and labels.
+        """
     image_np = np.array(image)
     for box, label in zip(boxes, labels):
         if label == 1:  # Draw predictions only for the "Car" class (class 1)
@@ -41,13 +56,18 @@ def draw_boxes_on_image(image, boxes, labels):
 
 @app.route('/image_predict', methods=['POST'])
 def image_predict():
-    global model, device
-    model.to(device)
+    """
+        Endpoint for predicting objects in an image.
+
+        Returns:
+            jsonify: JSON response containing the prediction results.
+        """
+    model.to(DEVICE)
     file = request.files['file']
     image_bytes = file.read()
     image = Image.open(io.BytesIO(image_bytes))
     image_tensor = transform(image)
-    image_tensor = image_tensor.unsqueeze(0).to(device)
+    image_tensor = image_tensor.unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
         predictions = model(image_tensor)
@@ -69,6 +89,12 @@ def image_predict():
 
 @app.route('/process_video', methods=['POST'])
 def process_video():
+    """
+        Endpoint for processing a video and adding bounding boxes to frames.
+
+        Returns:
+            bytes: Processed video file.
+        """
     video = request.files['file']
     video.save(video.filename)
     cap = cv2.VideoCapture(video.filename)
@@ -81,10 +107,9 @@ def process_video():
         ret, image = cap.read()
         if not ret:
             break
-        global model, device
         image_tensor = transform(image)
-        image_tensor = image_tensor.unsqueeze(0).to(device)
-        model.to(device)
+        image_tensor = image_tensor.unsqueeze(0).to(DEVICE)
+        model.to(DEVICE)
         with torch.no_grad():
             predictions = model(image_tensor)
             filtered_predictions = []
@@ -120,16 +145,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args = vars(args)
 
-transform = T.Compose([T.ToTensor(),
-    T.Resize((IMAGE_SIZE[1], IMAGE_SIZE[0])),  # Replace (h, w)  with your desired size,
-    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+    transform = T.Compose([T.ToTensor(),
+        T.Resize((IMAGE_SIZE[1], IMAGE_SIZE[0])),  # Replace (h, w)  with your desired size,
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
-model_path = args["model_path"] if args["model_path"] else r'./model.pth'
-model = None
-device = DEVICE
-confidence_threshold = args["confidence_threshold"] if args["confidence_threshold"] else 0.5
-
-load_model()
-
-app.run(host='0.0.0.0', debug=False)
+    model_path = args["model_path"] if args["model_path"] else SAVED_MODEL_FOLDER
+    model = load_model()
+    confidence_threshold = args["confidence_threshold"] if args["confidence_threshold"] else CONFIDENCE_THRESHOLD
+    app.run(host='0.0.0.0', debug=False)
