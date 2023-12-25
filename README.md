@@ -41,7 +41,11 @@ The model is trained on the provided dataset using the following configuration:
 - Batch size: 8
 - Number of epochs: 10
 - Confidence threshold: 0.5
-
+  
+Move to src folder
+```bash
+cd src
+```
 Run train.py
 ```bash
 python train.py --dataset_path /path/to/your/dataset \
